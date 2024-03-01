@@ -1,0 +1,65 @@
+---
+- name: Setup JFrog Platform with Helm on Kubernetes
+  hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+    - name: Check if Helm is installed
+      command: helm version --short
+      register: helm_installed
+      failed_when: false
+      changed_when: false
+
+    - name: Download and Install Helm (Linux)
+      block:
+        - name: Download Helm tarball
+          get_url:
+            url: "https://get.helm.sh/helm-v3.5.4-linux-amd64.tar.gz"
+            dest: "/tmp/helm-v3.5.4-linux-amd64.tar.gz"
+            validate_certs: yes
+
+        - name: Create directory for Helm extraction
+          file:
+            path: "/tmp/helm-extract"
+            state: directory
+
+        - name: Extract Helm tarball
+          unarchive:
+            src: "/tmp/helm-v3.5.4-linux-amd64.tar.gz"
+            dest: "/tmp/helm-extract"
+            remote_src: yes
+            extra_opts: [--strip-components=1]
+
+        - name: Move Helm to /usr/local/bin
+          command: mv /tmp/helm-extract/helm /usr/local/bin/helm
+          args:
+            creates: /usr/local/bin/helm
+      when: helm_installed.rc != 0
+
+    - name: Add JFrog Helm repository
+      community.kubernetes.helm_repository:
+        name: jfrog
+        repo_url: https://charts.jfrog.io
+        state: present
+      when: helm_installed.rc == 0 or helm_installed.rc != 0
+
+    - name: Install JFrog platform
+      community.kubernetes.helm:
+        name: jfrog-platform
+        namespace: jfrog-platform
+        create_namespace: true
+        chart_ref: jfrog/jfrog-platform
+        release_state: present
+        values:
+          artifactory:
+            mc:
+              enabled: false
+          distribution:
+            enabled: false
+          redis:
+            enabled: false
+          pipelines:
+            enabled: false
+          insight:
+            enabled: false
